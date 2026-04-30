@@ -171,6 +171,162 @@ fn audit_correct_session_close() {
 }
 
 // ════════════════════════════════════════════════════════════════
+// Stdio Transport
+// ════════════════════════════════════════════════════════════════
+
+#[test]
+fn stdio_initialize_returns_server_info() {
+    let binary = env!("CARGO_BIN_EXE_obsidian-mcp");
+    let mut child = std::process::Command::new(binary)
+        .args(["--transport", "stdio"])
+        .env("OBSIDIAN_API_KEY", "test-key")
+        .env("OBSIDIAN_API_URL", "https://localhost:1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to spawn binary");
+
+    use std::io::{BufRead, Write};
+    let stdin = child.stdin.as_mut().expect("stdin");
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": null
+    });
+    writeln!(stdin, "{request}").unwrap();
+    stdin.flush().unwrap();
+
+    let stdout = child.stdout.as_mut().expect("stdout");
+    let reader = std::io::BufReader::new(stdout);
+    let line = reader.lines().next().unwrap().unwrap();
+    let resp: serde_json::Value = serde_json::from_str(&line).unwrap();
+
+    assert_eq!(resp["jsonrpc"], "2.0");
+    assert_eq!(resp["id"], 1);
+    assert_eq!(resp["result"]["serverInfo"]["name"], "obsidian-mcp");
+    assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn stdio_tools_list_returns_16_tools() {
+    let binary = env!("CARGO_BIN_EXE_obsidian-mcp");
+    let mut child = std::process::Command::new(binary)
+        .args(["--transport", "stdio"])
+        .env("OBSIDIAN_API_KEY", "test-key")
+        .env("OBSIDIAN_API_URL", "https://localhost:1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to spawn binary");
+
+    use std::io::{BufRead, Write};
+    let stdin = child.stdin.as_mut().expect("stdin");
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/list",
+        "params": null
+    });
+    writeln!(stdin, "{request}").unwrap();
+    stdin.flush().unwrap();
+
+    let stdout = child.stdout.as_mut().expect("stdout");
+    let reader = std::io::BufReader::new(stdout);
+    let line = reader.lines().next().unwrap().unwrap();
+    let resp: serde_json::Value = serde_json::from_str(&line).unwrap();
+
+    assert_eq!(resp["jsonrpc"], "2.0");
+    assert_eq!(resp["id"], 2);
+    let tools = resp["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 16);
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn stdio_invalid_json_returns_parse_error() {
+    let binary = env!("CARGO_BIN_EXE_obsidian-mcp");
+    let mut child = std::process::Command::new(binary)
+        .args(["--transport", "stdio"])
+        .env("OBSIDIAN_API_KEY", "test-key")
+        .env("OBSIDIAN_API_URL", "https://localhost:1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to spawn binary");
+
+    use std::io::{BufRead, Write};
+    let stdin = child.stdin.as_mut().expect("stdin");
+    writeln!(stdin, "not valid json").unwrap();
+    stdin.flush().unwrap();
+
+    let stdout = child.stdout.as_mut().expect("stdout");
+    let reader = std::io::BufReader::new(stdout);
+    let line = reader.lines().next().unwrap().unwrap();
+    let resp: serde_json::Value = serde_json::from_str(&line).unwrap();
+
+    assert_eq!(resp["error"]["code"], -32700); // ParseError
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn stdio_notification_gets_no_response() {
+    let binary = env!("CARGO_BIN_EXE_obsidian-mcp");
+    let mut child = std::process::Command::new(binary)
+        .args(["--transport", "stdio"])
+        .env("OBSIDIAN_API_KEY", "test-key")
+        .env("OBSIDIAN_API_URL", "https://localhost:1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to spawn binary");
+
+    use std::io::{BufRead, Write};
+    let stdin = child.stdin.as_mut().expect("stdin");
+
+    // Send a notification (no id) — should NOT produce a response
+    let notification = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized"
+    });
+    writeln!(stdin, "{notification}").unwrap();
+    stdin.flush().unwrap();
+
+    // Now send a real request — should get a response
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 42,
+        "method": "tools/list"
+    });
+    writeln!(stdin, "{request}").unwrap();
+    stdin.flush().unwrap();
+
+    let stdout = child.stdout.as_mut().expect("stdout");
+    let reader = std::io::BufReader::new(stdout);
+    let line = reader.lines().next().unwrap().unwrap();
+    let resp: serde_json::Value = serde_json::from_str(&line).unwrap();
+
+    // The response should be for our tools/list request (id: 42),
+    // not for the notification
+    assert_eq!(resp["id"], 42);
+    assert!(resp["result"]["tools"].is_array());
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// ════════════════════════════════════════════════════════════════
 // Config Snippets Validation
 // ════════════════════════════════════════════════════════════════
 
@@ -183,8 +339,8 @@ fn claude_desktop_config_is_valid_json() {
     assert!(parsed.get("mcpServers").is_some(), "should have mcpServers key");
     let obsidian = parsed["mcpServers"]["obsidian"].as_object()
         .expect("should have obsidian server config");
+    // Claude Desktop uses stdio transport (command + args)
     assert!(obsidian.get("command").is_some(), "should have command field");
-    assert!(obsidian.get("args").is_some(), "should have args field");
 }
 
 #[test]
@@ -194,6 +350,9 @@ fn claude_code_config_is_valid_json() {
     let parsed: serde_json::Value = serde_json::from_str(&content)
         .expect("config should be valid JSON");
     assert!(parsed.get("mcpServers").is_some());
+    let obsidian = parsed["mcpServers"]["obsidian"].as_object()
+        .expect("should have obsidian server config");
+    assert!(obsidian.get("command").is_some(), "should have command field");
 }
 
 #[test]
@@ -257,8 +416,22 @@ fn release_binary_size_under_10mb() {
 // ════════════════════════════════════════════════════════════════
 
 #[test]
-fn default_host_is_localhost() {
-    // Verify the default bind address is 127.0.0.1, not 0.0.0.0
+fn default_transport_is_stdio() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_obsidian-mcp"))
+        .arg("--help")
+        .output()
+        .expect("failed to run binary");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("stdio"),
+        "default transport should be stdio, got: {stdout}"
+    );
+}
+
+#[test]
+fn sse_host_default_is_localhost() {
+    // Verify the SSE bind address defaults to 127.0.0.1, not 0.0.0.0
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_obsidian-mcp"))
         .arg("--help")
         .output()

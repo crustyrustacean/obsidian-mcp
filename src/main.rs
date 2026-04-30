@@ -18,11 +18,15 @@ struct Args {
     #[arg(long)]
     env_file: Option<std::path::PathBuf>,
 
-    /// Host to bind the MCP server to (default: 127.0.0.1)
+    /// Transport mode: stdio (for MCP clients that launch as subprocess) or sse (HTTP server)
+    #[arg(long, default_value = "stdio")]
+    transport: String,
+
+    /// Host to bind the MCP server to (SSE transport only, default: 127.0.0.1)
     #[arg(long, default_value = "127.0.0.1")]
     host: String,
 
-    /// Port for the MCP server to listen on (default: 3000)
+    /// Port for the MCP server to listen on (SSE transport only, default: 3000)
     #[arg(long, default_value_t = 3000)]
     port: u16,
 }
@@ -30,11 +34,13 @@ struct Args {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Initialize tracing subscriber (respects RUST_LOG env var)
+    // All log output goes to stderr — stdout is reserved for MCP JSON-RPC in stdio mode
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
+        .with_writer(std::io::stderr)
         .init();
 
     let args = Args::parse();
@@ -74,17 +80,26 @@ async fn main() -> anyhow::Result<()> {
     let tool_count = registry.list().len();
     tracing::info!(tools = tool_count, "registered MCP tools");
 
-    let app = obsidian_mcp::server::app(registry);
-
-    let addr = format!("{}:{}", args.host, args.port);
-    tracing::info!("starting MCP server on {addr}");
-    tracing::info!("SSE endpoint: http://{addr}/sse");
-    tracing::info!("MCP endpoint: http://{addr}/mcp");
-
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    match args.transport.as_str() {
+        "stdio" => {
+            tracing::info!(tools = tool_count, "starting MCP server in stdio mode");
+            obsidian_mcp::stdio::run_stdio(registry).await?;
+        }
+        "sse" => {
+            let app = obsidian_mcp::server::app(registry);
+            let addr = format!("{}:{}", args.host, args.port);
+            tracing::info!(tools = tool_count, "starting MCP server in SSE mode on {addr}");
+            tracing::info!("SSE endpoint: http://{addr}/sse");
+            tracing::info!("MCP endpoint: http://{addr}/mcp");
+            let listener = tokio::net::TcpListener::bind(&addr).await?;
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown_signal())
+                .await?;
+        }
+        other => {
+            anyhow::bail!("invalid transport: {other} (expected 'stdio' or 'sse')");
+        }
+    }
 
     Ok(())
 }

@@ -1,6 +1,6 @@
 # obsidian-mcp
 
-A Rust-native MCP (Model Context Protocol) server that bridges an Obsidian vault to any MCP-compatible AI client. Single statically-compiled binary using SSE transport.
+A Rust-native MCP (Model Context Protocol) server that bridges an Obsidian vault to any MCP-compatible AI client. Single statically-compiled binary with **stdio** (default) and **SSE** transports.
 
 ## Prerequisites
 
@@ -48,8 +48,18 @@ If it fails, check that:
 
 ### 4. Start the Server
 
+**Stdio mode** (default — for Claude Desktop, Claude Code, pi):
+
 ```bash
-obsidian-mcp --host 127.0.0.1 --port 3000
+obsidian-mcp
+```
+
+The server reads JSON-RPC from stdin and writes responses to stdout.
+
+**SSE mode** (for Cursor, Windsurf, and HTTP-based clients):
+
+```bash
+obsidian-mcp --transport sse --host 127.0.0.1 --port 3000
 ```
 
 The server exposes two endpoints:
@@ -67,7 +77,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "obsidian": {
       "command": "obsidian-mcp",
-      "args": ["--host", "127.0.0.1", "--port", "3000"],
+      "args": [],
       "env": {
         "OBSIDIAN_API_KEY": "<your-api-key>",
         "OBSIDIAN_API_URL": "https://localhost:27124"
@@ -77,7 +87,13 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
+The server runs in **stdio mode** by default — Claude Desktop launches it as a subprocess and communicates over stdin/stdout.
+
 See `config/claude-desktop.json` for a template.
+
+### Claude Code CLI
+
+Same config as Claude Desktop. See `config/claude-code.json` for a template.
 
 ### Cursor / Windsurf
 
@@ -107,8 +123,8 @@ Connect to `http://127.0.0.1:3000/sse` for the event stream and send JSON-RPC re
 |------|---------|-------------|
 | `--test-connection` | — | Test Obsidian API connectivity and exit |
 | `--env-file` | `.env` | Path to .env file |
-| `--host` | `127.0.0.1` | MCP server bind address |
-| `--port` | `3000` | MCP server port |
+| `--transport` | `stdio` | Transport mode: `stdio` or `sse` |
+| `--host` | `127.0.0.1` | MCP server bind address (SSE only) |
 
 ## Tools (16)
 
