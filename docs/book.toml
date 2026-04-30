@@ -1,0 +1,13 @@
+[book]
+title = "Obsidian MCP Server"
+authors = ["Crusty Rustacean"]
+description = "A Rust-native MCP server that bridges an Obsidian vault to AI clients"
+language = "en"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "navy"
+git-repository-url = "https://github.com/crustyrustacean/obsidian-mcp"
+edit-url-template = "https://github.com/crustyrustacean/obsidian-mcp/edit/trunk/docs/src/{path}"

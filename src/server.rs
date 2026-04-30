@@ -91,22 +91,33 @@ async fn mcp_handler(State(state): State<AppState>, body: axum::body::Bytes) -> 
         }
     };
 
-    // Validate jsonrpc version
+    let resp = dispatch_request(&state.registry, req).await;
+    (StatusCode::OK, axum::Json(resp)).into_response()
+}
+
+/// Dispatch a JSON-RPC request to the appropriate handler.
+///
+/// This is the core dispatch function shared by both SSE and stdio transports.
+/// Returns a JSON-RPC response. For MCP notifications (requests without an id),
+/// returns a success response that should be silently discarded by stdio callers.
+pub async fn dispatch_request(registry: &ToolRegistry, req: JsonRpcRequest) -> JsonRpcResponse {
     if let Err(err_resp) = validate_request(&req) {
-        return (StatusCode::OK, axum::Json(err_resp)).into_response();
+        return err_resp;
     }
 
     let id = req.id.clone().unwrap_or(RequestId::Null);
 
-    // Dispatch method
-    let response = match req.method.as_str() {
-        "initialize" => handle_initialize(id).await,
-        "tools/list" => handle_tools_list(id, &state).await,
-        "tools/call" => handle_tools_call(id, req.params, &state).await,
-        _ => JsonRpcResponse::method_not_found(id, &req.method),
-    };
+    // MCP notifications (no id field) are acknowledged silently
+    if req.id.is_none() {
+        return JsonRpcResponse::success(id, serde_json::json!({}));
+    }
 
-    (StatusCode::OK, axum::Json(response)).into_response()
+    match req.method.as_str() {
+        "initialize" => handle_initialize(id).await,
+        "tools/list" => handle_tools_list(id, registry).await,
+        "tools/call" => handle_tools_call(id, req.params, registry).await,
+        _ => JsonRpcResponse::method_not_found(id, &req.method),
+    }
 }
 
 /// Handle the MCP initialize method.
@@ -127,9 +138,8 @@ async fn handle_initialize(id: RequestId) -> JsonRpcResponse {
 }
 
 /// Handle the tools/list method.
-async fn handle_tools_list(id: RequestId, state: &AppState) -> JsonRpcResponse {
-    let tools: Vec<Value> = state
-        .registry
+async fn handle_tools_list(id: RequestId, registry: &ToolRegistry) -> JsonRpcResponse {
+    let tools: Vec<Value> = registry
         .list()
         .iter()
         .map(|t| {
@@ -148,7 +158,7 @@ async fn handle_tools_list(id: RequestId, state: &AppState) -> JsonRpcResponse {
 async fn handle_tools_call(
     id: RequestId,
     params: Option<Value>,
-    state: &AppState,
+    registry: &ToolRegistry,
 ) -> JsonRpcResponse {
     let params = match params {
         Some(p) => p,
@@ -164,7 +174,7 @@ async fn handle_tools_call(
 
     let arguments = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
 
-    match state.registry.call(&tool_name, arguments).await {
+    match registry.call(&tool_name, arguments).await {
         Ok(result) => JsonRpcResponse::success(id, result),
         Err(err) => {
             // Surface tool errors — include isError flag for MCP compliance

@@ -21,9 +21,10 @@ A Rust-native MCP (Model Context Protocol) server that bridges an Obsidian vault
 
 | Module | Responsibility |
 |--------|---------------|
+| `src/stdio.rs` | Stdio transport: reads NDJSON from stdin, dispatches, writes responses to stdout |
 | `src/protocol.rs` | JSON-RPC 2.0 types (Request, Response, Error, RequestId), validation |
 | `src/tools.rs` | Tool registry (register, list, dispatch), ToolDescriptor, ToolHandler type alias |
-| `src/server.rs` | Axum app, SSE + MCP route handlers, AppState, connection limiting |
+| `src/server.rs` | Axum app (SSE), shared `dispatch_request()`, AppState, connection limiting |
 | `src/client.rs` | Obsidian Local REST API client (all 16 tool methods) |
 | `src/config.rs` | Config struct, .env file parsing, defaults |
 | `src/error.rs` | ObsidianError enum, path/query validation |
@@ -31,11 +32,13 @@ A Rust-native MCP (Model Context Protocol) server that bridges an Obsidian vault
 | `src/tools_impl.rs` | 16 tool descriptors + handler registration |
 | `src/frontmatter.rs` | YAML frontmatter schema, parsing, validation |
 | `src/vault.rs` | Vault init, directory layout, session protocols, routing table |
+| `src/audit.rs` | Session-end audit: session log presence, manifest freshness |
+| `.pi/extensions/obsidian/` | TypeScript pi extension — spawns binary in stdio mode, registers 16 tools |
 
 ## Key Design Decisions
 
-1. **Roll minimal MCP protocol** — Rust MCP ecosystem is too young; implementing JSON-RPC 2.0 + SSE transport manually (~200 lines)
-2. **SSE transport** — not stdio, for broader client compatibility
+1. **Roll minimal MCP protocol** — Rust MCP ecosystem is too young; implementing JSON-RPC 2.0 + dual transport manually
+2. **Stdio is the primary transport** — SSE is for HTTP clients like Cursor; stdio is for Claude Desktop, Claude Code, and pi
 3. **Per-tool headers** — each tool sets its own `Accept`/`Content-Type` explicitly; never share a single header set across endpoints
 4. **Write verification** — after every write, immediately read back and verify byte count > 2 (guards against silent empty-write failures)
 5. **Max 5 MCP calls at session start** — keep context budgets lean
@@ -84,7 +87,8 @@ confidence: high
 ```bash
 cargo build --release
 cargo run -- --test-connection        # verify Obsidian API connectivity
-cargo run -- --host 127.0.0.1 --port 3000  # start MCP server
+cargo run --                            # start MCP server (stdio mode, default)
+cargo run -- --transport sse --port 3000  # start MCP server (SSE mode)
 ```
 
 ### CLI Flags
@@ -93,10 +97,11 @@ cargo run -- --host 127.0.0.1 --port 3000  # start MCP server
 |------|---------|-------------|
 | `--test-connection` | — | Test Obsidian API connectivity and exit |
 | `--env-file` | `.env` | Path to .env file |
-| `--host` | `127.0.0.1` | MCP server bind address |
-| `--port` | `3000` | MCP server port |
+| `--transport` | `stdio` | Transport mode: `stdio` or `sse` |
+| `--host` | `127.0.0.1` | MCP server bind address (SSE only) |
+| `--port` | `3000` | MCP server port (SSE only) |
 
 ## Constraints
 
-- Release binary size target: < 5MB (`opt-level = "z"`, `lto = true`)
+- Release binary size: 3.8 MB (`opt-level = "z"`, `lto = true`, `strip = true`, `panic = "abort"`)
 - Cross-compile targets: x86_64-unknown-linux-gnu, aarch64-apple-darwin, x86_64-pc-windows-msvc

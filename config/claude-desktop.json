@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "obsidian-mcp",
+      "args": [],
+      "env": {
+        "OBSIDIAN_API_KEY": "${OBSIDIAN_API_KEY}",
+        "OBSIDIAN_API_URL": "${OBSIDIAN_API_URL}"
+      }
+    }
+  }
+}

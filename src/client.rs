@@ -40,6 +40,8 @@ impl ObsidianClient {
     pub fn new(config: Config) -> Self {
         let http = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
             .build()
             .expect("failed to build HTTP client");
 
