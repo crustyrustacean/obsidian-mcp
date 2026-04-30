@@ -40,7 +40,7 @@ fn mock_client(server: &MockServer) -> Arc<ObsidianClient> {
 async fn read_note_sends_accept_text_markdown() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/vault/notes/test.md"))
+        .and(path("/vault/notes%2Ftest.md"))
         .and(header("Accept", "text/markdown"))
         .and(header("Authorization", "Bearer test-api-key"))
         .respond_with(ResponseTemplate::new(200).set_body_string("# Hello"))
@@ -57,7 +57,7 @@ async fn read_note_sends_accept_text_markdown() {
 async fn read_note_metadata_sends_accept_application_json() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/vault/notes/test.md"))
+        .and(path("/vault/notes%2Ftest.md"))
         .and(header("Accept", "application/json"))
         .and(header("Authorization", "Bearer test-api-key"))
         .respond_with(
@@ -81,7 +81,7 @@ async fn write_note_sends_content_type_text_markdown() {
     let server = MockServer::start().await;
     // Mock the PUT request
     Mock::given(method("PUT"))
-        .and(path("/vault/notes/new.md"))
+        .and(path("/vault/notes%2Fnew.md"))
         .and(header("Content-Type", "text/markdown"))
         .and(header("Authorization", "Bearer test-api-key"))
         .and(body_string("# New Note"))
@@ -91,7 +91,7 @@ async fn write_note_sends_content_type_text_markdown() {
 
     // Mock the read-back verification (read_note)
     Mock::given(method("GET"))
-        .and(path("/vault/notes/new.md"))
+        .and(path("/vault/notes%2Fnew.md"))
         .and(header("Accept", "text/markdown"))
         .respond_with(ResponseTemplate::new(200).set_body_string("# New Note"))
         .mount(&server)
@@ -108,14 +108,14 @@ async fn write_note_verifies_write_readback() {
 
     // Mock the PUT (succeeds)
     Mock::given(method("PUT"))
-        .and(path("/vault/notes/empty.md"))
+        .and(path("/vault/notes%2Fempty.md"))
         .respond_with(ResponseTemplate::new(204))
         .mount(&server)
         .await;
 
     // Mock the read-back — returns empty content (triggers verification failure)
     Mock::given(method("GET"))
-        .and(path("/vault/notes/empty.md"))
+        .and(path("/vault/notes%2Fempty.md"))
         .respond_with(ResponseTemplate::new(200).set_body_string(""))
         .mount(&server)
         .await;
@@ -135,7 +135,7 @@ async fn write_note_verifies_write_readback() {
 async fn append_note_sends_post() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/vault/notes/existing.md"))
+        .and(path("/vault/notes%2Fexisting.md"))
         .and(header("Content-Type", "text/markdown"))
         .and(body_string("\nAppended content"))
         .respond_with(ResponseTemplate::new(204))
@@ -144,7 +144,7 @@ async fn append_note_sends_post() {
 
     // Mock the read-back verification
     Mock::given(method("GET"))
-        .and(path("/vault/notes/existing.md"))
+        .and(path("/vault/notes%2Fexisting.md"))
         .respond_with(ResponseTemplate::new(200).set_body_string("Original\nAppended content"))
         .mount(&server)
         .await;
@@ -158,7 +158,7 @@ async fn append_note_sends_post() {
 async fn patch_note_targets_heading() {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))
-        .and(path("/vault/notes/note.md"))
+        .and(path("/vault/notes%2Fnote.md"))
         .and(header("Content-Type", "text/markdown"))
         .and(header("Heading", "## Section"))
         .and(body_string("Updated section content"))
@@ -168,7 +168,7 @@ async fn patch_note_targets_heading() {
 
     // Mock the read-back verification
     Mock::given(method("GET"))
-        .and(path("/vault/notes/note.md"))
+        .and(path("/vault/notes%2Fnote.md"))
         .respond_with(ResponseTemplate::new(200).set_body_string("# Note\n## Section\nUpdated section content"))
         .mount(&server)
         .await;
@@ -182,7 +182,7 @@ async fn patch_note_targets_heading() {
 async fn delete_note_sends_delete() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
-        .and(path("/vault/notes/old.md"))
+        .and(path("/vault/notes%2Fold.md"))
         .and(header("Authorization", "Bearer test-api-key"))
         .respond_with(ResponseTemplate::new(204))
         .mount(&server)
@@ -202,10 +202,8 @@ async fn delete_note_requires_confirm() {
     let result = client.delete_note("notes/old.md", false).await;
     assert!(result.is_err());
     match result.unwrap_err() {
-        ObsidianError::InvalidPath(msg) => {
-            assert!(msg.contains("confirm=true"));
-        }
-        e => panic!("expected InvalidPath, got: {e}"),
+        ObsidianError::DeleteConfirmationRequired => {}
+        e => panic!("expected DeleteConfirmationRequired, got: {e}"),
     }
 }
 
@@ -560,7 +558,7 @@ async fn open_note_triggers_ui_open() {
     let server = MockServer::start().await;
 
     Mock::given(method("POST"))
-        .and(path("/open/notes/my-note.md"))
+        .and(path("/open/notes%2Fmy-note.md"))
         .and(header("Authorization", "Bearer test-api-key"))
         .respond_with(ResponseTemplate::new(204))
         .mount(&server)
@@ -824,4 +822,115 @@ async fn write_note_500_returns_api_error() {
         }
         e => panic!("expected ApiError, got: {e}"),
     }
+}
+
+// ════════════════════════════════════════════════════════════════
+// URL encoding: paths are URL-encoded in request URLs
+// ════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn paths_with_slashes_are_url_encoded() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/vault/notes%2Fdeep%2Ftopic.md"))
+        .and(header("Accept", "text/markdown"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("Deep content"))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server);
+    let result = client.read_note("notes/deep/topic.md").await;
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), "Deep content");
+}
+
+#[tokio::test]
+async fn open_note_url_encodes_path() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/open/notes%2Fmy-note.md"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+
+    let client = mock_client(&server);
+    let result = client.open_note("notes/my-note.md").await;
+    assert!(result.is_ok());
+}
+
+// ════════════════════════════════════════════════════════════════
+// Delete confirmation uses dedicated error variant
+// ════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn delete_without_confirm_returns_dedicated_error() {
+    let server = MockServer::start().await;
+    let client = mock_client(&server);
+
+    let result = client.delete_note("test.md", false).await;
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ObsidianError::DeleteConfirmationRequired => {}
+        e => panic!("expected DeleteConfirmationRequired, got: {e}"),
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Query length limits
+// ════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn search_query_too_long_returns_error() {
+    let server = MockServer::start().await;
+    let client = mock_client(&server);
+
+    let long_query = "a".repeat(1001);
+    let result = client.search(&long_query).await;
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ObsidianError::ContentTooLong(param, max) => {
+            assert_eq!(param, "query");
+            assert_eq!(max, 1000);
+        }
+        e => panic!("expected ContentTooLong, got: {e}"),
+    }
+}
+
+#[tokio::test]
+async fn dataview_query_too_long_returns_error() {
+    let server = MockServer::start().await;
+    let client = mock_client(&server);
+
+    let long_dql = "a".repeat(1001);
+    let result = client.dataview_query(&long_dql).await;
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ObsidianError::ContentTooLong(param, _) => {
+            assert_eq!(param, "dql");
+        }
+        e => panic!("expected ContentTooLong, got: {e}"),
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Rate limiting
+// ════════════════════════════════════════════════════════════════
+
+#[test]
+fn rate_limiter_allows_initial_requests() {
+    let limiter = obsidian_mcp::rate_limiter::ToolRateLimiter::new();
+    assert!(limiter.check("test_tool").is_ok());
+}
+
+#[test]
+fn rate_limiter_per_tool_independence() {
+    let limiter = obsidian_mcp::rate_limiter::ToolRateLimiter::new();
+    // Exhaust tool_a's burst
+    for _ in 0..10 {
+        let _ = limiter.check("tool_a");
+    }
+    // tool_b should still be allowed
+    assert!(limiter.check("tool_b").is_ok());
 }

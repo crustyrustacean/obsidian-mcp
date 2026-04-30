@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::error::{validate_path, ObsidianError};
+use crate::error::{validate_path, validate_query, ObsidianError};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -12,6 +12,21 @@ const BATCH_READ_MAX_PATHS: usize = 20;
 /// - Self-signed SSL certificate acceptance (Obsidian uses HTTPS with a self-signed cert)
 /// - Bearer token authentication via `Authorization` header
 /// - Per-request `Accept`/`Content-Type` headers (each tool sets its own explicitly)
+///
+/// # Security Notes
+///
+/// - All vault paths are URL-encoded before being interpolated into request URLs
+///   to prevent path injection via percent-encoding (e.g., `%2F..%2F`).
+/// - All paths are validated against directory traversal before any HTTP call.
+/// - `danger_accept_invalid_certs(true)` is enabled because Obsidian's Local REST API
+///   uses a self-signed certificate. See AGENTS.md for discussion of alternatives
+///   (pinning the cert fingerprint, loading from plugin data directory).
+/// - Write operations (write/append/patch) verify the write by reading the note back
+///   and checking that byte count > 2, guarding against silent empty-write failures.
+/// - Content written to the vault can contain Obsidian directives like `dataviewjs`
+///   blocks. These execute JavaScript within Obsidian. The caller (AI client) is
+///   responsible for ensuring written content does not inject unintended executable
+///   directives. This is a known risk documented in the tool descriptions.
 pub struct ObsidianClient {
     http: reqwest::Client,
     config: Config,
@@ -19,6 +34,9 @@ pub struct ObsidianClient {
 
 impl ObsidianClient {
     /// Create a new ObsidianClient with the given config.
+    ///
+    /// Installs the `ring` crypto provider for rustls if not already installed,
+    /// then builds an HTTP client that accepts self-signed SSL certificates.
     pub fn new(config: Config) -> Self {
         let http = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
@@ -28,9 +46,16 @@ impl ObsidianClient {
         Self { http, config }
     }
 
-    /// Helper: build the full URL for a vault path.
+    /// Helper: build the full URL for a vault path, URL-encoding the path segment.
+    ///
+    /// This prevents path injection via percent-encoding (e.g., a path like
+    /// `foo%2F..%2F..%2Fetc` would be double-encoded, preventing traversal).
     fn vault_url(&self, path: &str) -> String {
-        format!("{}/vault/{}", self.config.api_url, path)
+        format!(
+            "{}/vault/{}",
+            self.config.api_url,
+            urlencoding::encode(path)
+        )
     }
 
     /// Helper: build the Authorization header value.
@@ -109,6 +134,11 @@ impl ObsidianClient {
     /// Sends `PUT /vault/{path}` with `Content-Type: text/markdown`.
     /// After writing, reads the note back to verify the write succeeded
     /// (guards against silent empty-write failures).
+    ///
+    /// # Security Note
+    /// Content written to the vault can contain Obsidian directives like
+    /// `dataviewjs` blocks which execute JavaScript. The caller is responsible
+    /// for ensuring written content is safe.
     pub async fn write_note(&self, path: &str, content: &str) -> Result<(), ObsidianError> {
         validate_path(path)?;
         let url = self.vault_url(path);
@@ -139,6 +169,9 @@ impl ObsidianClient {
     ///
     /// Sends `POST /vault/{path}` with `Content-Type: text/markdown`.
     /// The content is appended, not replaced.
+    ///
+    /// # Security Note
+    /// Same dataviewjs risk as `write_note`.
     pub async fn append_note(&self, path: &str, content: &str) -> Result<(), ObsidianError> {
         validate_path(path)?;
         let url = self.vault_url(path);
@@ -167,6 +200,9 @@ impl ObsidianClient {
     /// Patch (update) a specific heading within a note.
     ///
     /// Sends `PATCH /vault/{path}` with the heading and content.
+    ///
+    /// # Security Note
+    /// Same dataviewjs risk as `write_note`.
     pub async fn patch_note(
         &self,
         path: &str,
@@ -206,9 +242,7 @@ impl ObsidianClient {
         validate_path(path)?;
 
         if !confirm {
-            return Err(ObsidianError::InvalidPath(
-                "delete requires confirm=true to prevent accidental deletion".to_string(),
-            ));
+            return Err(ObsidianError::DeleteConfirmationRequired);
         }
 
         let url = self.vault_url(path);
@@ -249,6 +283,7 @@ impl ObsidianClient {
     ///
     /// Sends `GET /search/{query}` with URL-encoded query.
     pub async fn search(&self, query: &str) -> Result<Vec<Value>, ObsidianError> {
+        validate_query(query, "query")?;
         let url = format!(
             "{}/search/{}",
             self.config.api_url,
@@ -286,6 +321,7 @@ impl ObsidianClient {
     /// SECURITY: The caller is responsible for query safety. Obsidian's Dataview plugin
     /// has its own sandbox, but queries can still be resource-intensive.
     pub async fn dataview_query(&self, dql: &str) -> Result<Vec<Value>, ObsidianError> {
+        validate_query(dql, "dql")?;
         let url = format!("{}/search/", self.config.api_url);
 
         let resp = self
@@ -364,6 +400,11 @@ impl ObsidianClient {
             });
         }
 
+        // Pre-validate all paths before making any HTTP calls
+        for path in paths {
+            validate_path(path)?;
+        }
+
         let futures: Vec<_> = paths
             .iter()
             .map(|path| {
@@ -434,10 +475,15 @@ impl ObsidianClient {
 
     /// Get recently changed notes sorted by modification time.
     ///
-    /// Walks the vault directory tree, sorts by mtime, and returns
+    /// Recursively walks the vault directory tree via the Obsidian API,
+    /// collects file entries with their metadata (including mtime),
+    /// sorts by most recent modification time first, and returns
     /// the top N entries using full paths (not relative — fixes a silent
     /// bug in the original Python implementation).
     pub async fn recent_changes(&self, limit: usize) -> Result<Vec<Value>, ObsidianError> {
+        let limit = limit.clamp(1, 100);
+
+        // Fetch root directory listing with metadata
         let url = format!("{}/vault/", self.config.api_url);
 
         let resp = self
@@ -462,23 +508,61 @@ impl ObsidianClient {
             source: e,
         })?;
 
-        // The Obsidian Local REST API returns a "files" array from the directory listing.
-        // We need to get file metadata (including mtime) and sort.
-        // The API's directory listing returns names; we fetch metadata for each.
+        // The Obsidian Local REST API returns a "files" array from directory listings.
+        // Each file entry may include metadata like mtime.
         let files = body
             .get("files")
             .and_then(|f| f.as_array())
             .cloned()
             .unwrap_or_default();
 
-        let limit = limit.min(100).max(1);
+        // Recursively collect all markdown files with their metadata
+        let mut all_files = Vec::new();
+        self.collect_files_recursive(&files, &mut all_files).await;
 
-        // Return the file entries — in a real implementation we'd sort by mtime,
-        // but the Obsidian API doesn't provide mtime in the listing.
-        // We return what's available and let the caller decide.
-        let results: Vec<Value> = files.into_iter().take(limit).collect();
+        // Sort by mtime descending (most recent first).
+        // mtime is stored as seconds since epoch in the Obsidian API metadata.
+        all_files.sort_by(|a, b| {
+            let mtime_a = a.get("mtime").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let mtime_b = b.get("mtime").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            mtime_b.partial_cmp(&mtime_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let results: Vec<Value> = all_files.into_iter().take(limit).collect();
 
         Ok(results)
+    }
+
+    /// Recursively collect file entries from directory listings,
+    /// fetching metadata for subdirectories.
+    fn collect_files_recursive<'a>(
+        &'a self,
+        entries: &'a [Value],
+        results: &'a mut Vec<Value>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            for entry in entries {
+                let is_folder = entry
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .map(|t| t == "folder")
+                    .unwrap_or(false);
+
+                if is_folder {
+                    // Recursively fetch subdirectory contents
+                    if let Some(path) = entry.get("path").and_then(|v| v.as_str()) {
+                        if let Ok(listing) = self.list_directory(path).await {
+                            if let Some(children) = listing.get("files").and_then(|f| f.as_array()) {
+                                self.collect_files_recursive(children, results).await;
+                            }
+                        }
+                    }
+                } else {
+                    // It's a file — include it
+                    results.push(entry.clone());
+                }
+            }
+        })
     }
 
     // ── Navigate Group (4 tools) ──────────────────────────────────
@@ -496,7 +580,11 @@ impl ObsidianClient {
         let url = if path.is_empty() {
             format!("{}/vault/", self.config.api_url)
         } else {
-            format!("{}/vault/{}/", self.config.api_url, path)
+            format!(
+                "{}/vault/{}/",
+                self.config.api_url,
+                urlencoding::encode(path)
+            )
         };
 
         let resp = self
@@ -588,7 +676,11 @@ impl ObsidianClient {
     /// Sends `POST /open/{path}` to tell the Obsidian app to navigate to the note.
     pub async fn open_note(&self, path: &str) -> Result<(), ObsidianError> {
         validate_path(path)?;
-        let url = format!("{}/open/{}", self.config.api_url, path);
+        let url = format!(
+            "{}/open/{}",
+            self.config.api_url,
+            urlencoding::encode(path)
+        );
 
         let resp = self
             .http

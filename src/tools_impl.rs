@@ -1,13 +1,16 @@
 use crate::client::ObsidianClient;
 use crate::error::ObsidianError;
 use crate::protocol::ErrorCode;
+use crate::rate_limiter::ToolRateLimiter;
 use crate::tools::{tool_result_content, ToolDescriptor, ToolRegistry};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-/// Tool descriptor definitions for all 16 Obsidian MCP tools.
-/// Each tool has its own explicit Accept/Content-Type headers —
-/// never share a single header set across endpoints.
+// Tool descriptor definitions for all 16 Obsidian MCP tools.
+// Each tool has its own explicit Accept/Content-Type headers —
+// never share a single header set across endpoints.
+
+// ── Descriptors ──────────────────────────────────────────────────
 
 pub fn read_note_descriptor() -> ToolDescriptor {
     ToolDescriptor {
@@ -46,7 +49,7 @@ pub fn read_note_metadata_descriptor() -> ToolDescriptor {
 pub fn write_note_descriptor() -> ToolDescriptor {
     ToolDescriptor {
         name: "obsidian_write_note".to_string(),
-        description: "Write (create or replace) a note in the Obsidian vault. The write is verified by reading the note back.".to_string(),
+        description: "Write (create or replace) a note in the Obsidian vault. The write is verified by reading the note back. WARNING: Content is written as-is — dataviewjs blocks will execute in Obsidian. Ensure content does not contain unintended executable directives.".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -67,7 +70,7 @@ pub fn write_note_descriptor() -> ToolDescriptor {
 pub fn append_note_descriptor() -> ToolDescriptor {
     ToolDescriptor {
         name: "obsidian_append_note".to_string(),
-        description: "Append content to an existing note in the Obsidian vault.".to_string(),
+        description: "Append content to an existing note in the Obsidian vault. WARNING: Content is written as-is — dataviewjs blocks will execute in Obsidian.".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -88,7 +91,7 @@ pub fn append_note_descriptor() -> ToolDescriptor {
 pub fn patch_note_descriptor() -> ToolDescriptor {
     ToolDescriptor {
         name: "obsidian_patch_note".to_string(),
-        description: "Patch (update) a specific heading within a note.".to_string(),
+        description: "Patch (update) a specific heading within a note. WARNING: Content is written as-is — dataviewjs blocks will execute in Obsidian.".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -140,7 +143,7 @@ pub fn search_descriptor() -> ToolDescriptor {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query"
+                    "description": "Search query (max 1000 characters)"
                 }
             },
             "required": ["query"]
@@ -157,7 +160,7 @@ pub fn dataview_query_descriptor() -> ToolDescriptor {
             "properties": {
                 "dql": {
                     "type": "string",
-                    "description": "Dataview DQL query string"
+                    "description": "Dataview DQL query string (max 1000 characters)"
                 }
             },
             "required": ["dql"]
@@ -221,7 +224,7 @@ pub fn periodic_note_descriptor() -> ToolDescriptor {
 pub fn recent_changes_descriptor() -> ToolDescriptor {
     ToolDescriptor {
         name: "obsidian_recent_changes".to_string(),
-        description: "Get recently changed notes from the vault, sorted by modification time. Returns full paths (not relative).".to_string(),
+        description: "Get recently changed notes from the vault, sorted by modification time. Returns full paths (not relative). Recursively walks the vault directory tree.".to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -290,11 +293,15 @@ pub fn open_note_descriptor() -> ToolDescriptor {
     }
 }
 
+// ── Error conversion ─────────────────────────────────────────────
+
 /// Convert an ObsidianError into a JSON-RPC error result value.
 fn obsidian_error_to_jsonrpc(err: ObsidianError) -> crate::protocol::JsonRpcError {
     let code = match &err {
         ObsidianError::InvalidPath(_) => ErrorCode::InvalidParams as i32,
+        ObsidianError::DeleteConfirmationRequired => ErrorCode::InvalidParams as i32,
         ObsidianError::BatchLimitExceeded { .. } => ErrorCode::InvalidParams as i32,
+        ObsidianError::ContentTooLong(..) => ErrorCode::InvalidParams as i32,
         ObsidianError::RateLimitExceeded { .. } => ErrorCode::ServerError as i32,
         _ => ErrorCode::ServerError as i32,
     };
@@ -306,15 +313,25 @@ fn obsidian_error_to_jsonrpc(err: ObsidianError) -> crate::protocol::JsonRpcErro
     }
 }
 
+// ── Tool registration ────────────────────────────────────────────
+
 /// Register all 16 Obsidian tools with their handlers into the registry.
+///
+/// Each handler first checks the per-tool rate limiter, then validates
+/// required parameters, then dispatches to the `ObsidianClient` method.
 pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClient>) {
+    let rate_limiter = ToolRateLimiter::new();
+
     // ── Read/Write Group (6) ──
 
     registry.register_with_handler(read_note_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_read_note").map_err(obsidian_error_to_jsonrpc)?;
                 let path = args["path"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -333,9 +350,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(read_note_metadata_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_read_note_metadata").map_err(obsidian_error_to_jsonrpc)?;
                 let path = args["path"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -354,9 +374,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(write_note_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_write_note").map_err(obsidian_error_to_jsonrpc)?;
                 let path = args["path"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -384,9 +407,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(append_note_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_append_note").map_err(obsidian_error_to_jsonrpc)?;
                 let path = args["path"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -414,9 +440,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(patch_note_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_patch_note").map_err(obsidian_error_to_jsonrpc)?;
                 let path = args["path"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -451,9 +480,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(delete_note_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_delete_note").map_err(obsidian_error_to_jsonrpc)?;
                 let path = args["path"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -477,9 +509,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(search_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_search").map_err(obsidian_error_to_jsonrpc)?;
                 let query = args["query"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -498,9 +533,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(dataview_query_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_dataview_query").map_err(obsidian_error_to_jsonrpc)?;
                 let dql = args["dql"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -519,9 +557,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(jsonlogic_query_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_jsonlogic_query").map_err(obsidian_error_to_jsonrpc)?;
                 let logic = args.get("logic").cloned().ok_or_else(|| {
                     crate::protocol::JsonRpcError {
                         code: ErrorCode::InvalidParams as i32,
@@ -542,9 +583,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(batch_read_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_batch_read").map_err(obsidian_error_to_jsonrpc)?;
                 let paths_array = args["paths"]
                     .as_array()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -579,9 +623,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(periodic_note_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_periodic_note").map_err(obsidian_error_to_jsonrpc)?;
                 let period = args["period"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {
@@ -600,9 +647,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(recent_changes_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_recent_changes").map_err(obsidian_error_to_jsonrpc)?;
                 let limit = args["limit"].as_u64().unwrap_or(10) as usize;
 
                 match client.recent_changes(limit).await {
@@ -617,9 +667,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(list_directory_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_list_directory").map_err(obsidian_error_to_jsonrpc)?;
                 let path = args["path"].as_str().unwrap_or("");
 
                 match client.list_directory(path).await {
@@ -632,10 +685,13 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(get_tags_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
-            let _ = args; // no parameters
+            let rl = rl.clone();
+            let _ = args;
             Box::pin(async move {
+                rl.check("obsidian_get_tags").map_err(obsidian_error_to_jsonrpc)?;
                 match client.get_tags().await {
                     Ok(tags) => Ok(tool_result_content(&serde_json::to_string_pretty(&tags).unwrap_or_default())),
                     Err(e) => Err(obsidian_error_to_jsonrpc(e)),
@@ -646,10 +702,13 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(server_status_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             let _ = args;
             Box::pin(async move {
+                rl.check("obsidian_server_status").map_err(obsidian_error_to_jsonrpc)?;
                 match client.server_status().await {
                     Ok(()) => Ok(tool_result_content("Obsidian API is reachable and healthy")),
                     Err(e) => Err(obsidian_error_to_jsonrpc(e)),
@@ -660,9 +719,12 @@ pub fn register_all_tools(registry: &mut ToolRegistry, client: Arc<ObsidianClien
 
     registry.register_with_handler(open_note_descriptor(), {
         let client = client.clone();
+        let rl = rate_limiter.clone();
         Arc::new(move |args: Value| {
             let client = client.clone();
+            let rl = rl.clone();
             Box::pin(async move {
+                rl.check("obsidian_open_note").map_err(obsidian_error_to_jsonrpc)?;
                 let path = args["path"]
                     .as_str()
                     .ok_or_else(|| crate::protocol::JsonRpcError {

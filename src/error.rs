@@ -25,11 +25,20 @@ pub enum ObsidianError {
     #[error("Invalid path: {0}")]
     InvalidPath(String),
 
+    #[error("Delete requires confirm=true to prevent accidental deletion")]
+    DeleteConfirmationRequired,
+
     #[error("Batch read limit exceeded: requested {requested}, maximum is {max}")]
     BatchLimitExceeded { requested: usize, max: usize },
 
-    #[error("Rate limit exceeded for tool '{tool}': {message}")]
-    RateLimitExceeded { tool: String, message: String },
+    #[error("Rate limit exceeded for tool '{tool}': retry after {retry_after_seconds:.1}s")]
+    RateLimitExceeded {
+        tool: String,
+        retry_after_seconds: f64,
+    },
+
+    #[error("Content too long: {0} characters, maximum is {1}")]
+    ContentTooLong(String, usize),
 }
 
 impl ObsidianError {
@@ -53,6 +62,11 @@ impl ObsidianError {
     }
 }
 
+/// Maximum length for search queries and content parameters.
+const MAX_QUERY_LENGTH: usize = 1000;
+/// Maximum length for individual paths in a batch read.
+const MAX_PATH_LENGTH: usize = 512;
+
 /// Validate a vault path to prevent directory traversal attacks.
 ///
 /// Rejects paths containing:
@@ -65,7 +79,7 @@ pub fn validate_path(path: &str) -> Result<&str, ObsidianError> {
         return Err(ObsidianError::InvalidPath("path cannot be empty".to_string()));
     }
 
-    if path.len() > 512 {
+    if path.len() > MAX_PATH_LENGTH {
         return Err(ObsidianError::InvalidPath(
             "path exceeds maximum length of 512 characters".to_string(),
         ));
@@ -91,6 +105,30 @@ pub fn validate_path(path: &str) -> Result<&str, ObsidianError> {
     }
 
     Ok(path)
+}
+
+/// Validate a search query string — enforces max length and rejects null bytes.
+pub fn validate_query<'a>(query: &'a str, param_name: &str) -> Result<&'a str, ObsidianError> {
+    if query.is_empty() {
+        return Err(ObsidianError::InvalidPath(format!(
+            "{param_name} cannot be empty"
+        )));
+    }
+
+    if query.contains('\0') {
+        return Err(ObsidianError::InvalidPath(format!(
+            "{param_name} contains null bytes"
+        )));
+    }
+
+    if query.len() > MAX_QUERY_LENGTH {
+        return Err(ObsidianError::ContentTooLong(
+            param_name.to_string(),
+            MAX_QUERY_LENGTH,
+        ));
+    }
+
+    Ok(query)
 }
 
 #[cfg(test)]
@@ -135,5 +173,33 @@ mod tests {
         assert!(validate_path("notes/my-note.md").is_ok());
         assert!(validate_path("ideas-bank.md").is_ok());
         assert!(validate_path("research/deep/topic.md").is_ok());
+    }
+
+    #[test]
+    fn validate_query_rejects_empty() {
+        assert!(validate_query("", "query").is_err());
+    }
+
+    #[test]
+    fn validate_query_rejects_null_bytes() {
+        assert!(validate_query("hello\0world", "query").is_err());
+    }
+
+    #[test]
+    fn validate_query_rejects_very_long_queries() {
+        let long_query = "a".repeat(1001);
+        assert!(validate_query(&long_query, "query").is_err());
+    }
+
+    #[test]
+    fn validate_query_accepts_valid_queries() {
+        assert!(validate_query("hello world", "query").is_ok());
+    }
+
+    #[test]
+    fn delete_confirmation_required_error_message() {
+        let err = ObsidianError::DeleteConfirmationRequired;
+        let msg = err.to_string();
+        assert!(msg.contains("confirm=true"));
     }
 }
