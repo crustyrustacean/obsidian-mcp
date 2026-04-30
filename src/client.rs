@@ -550,12 +550,11 @@ impl ObsidianClient {
 
                 if is_folder {
                     // Recursively fetch subdirectory contents
-                    if let Some(path) = entry.get("path").and_then(|v| v.as_str()) {
-                        if let Ok(listing) = self.list_directory(path).await {
-                            if let Some(children) = listing.get("files").and_then(|f| f.as_array()) {
-                                self.collect_files_recursive(children, results).await;
-                            }
-                        }
+                    if let Some(path) = entry.get("path").and_then(|v| v.as_str())
+                        && let Ok(listing) = self.list_directory(path).await
+                        && let Some(children) = listing.get("files").and_then(|f| f.as_array())
+                    {
+                        self.collect_files_recursive(children, results).await;
                     }
                 } else {
                     // It's a file — include it
