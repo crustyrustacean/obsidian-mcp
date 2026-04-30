@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "obsidian-mcp",
+      "args": ["--host", "127.0.0.1", "--port", "3000"],
+      "env": {
+        "OBSIDIAN_API_KEY": "${OBSIDIAN_API_KEY}",
+        "OBSIDIAN_API_URL": "${OBSIDIAN_API_URL}"
+      }
+    }
+  }
+}

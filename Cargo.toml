@@ -1,6 +1,6 @@
 [package]
 name = "obsidian-mcp"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 
 [dependencies]
@@ -35,3 +35,6 @@ tempfile = "3"
 [profile.release]
 opt-level = "z"
 lto = true
+strip = true
+panic = "abort"
+codegen-units = 1
