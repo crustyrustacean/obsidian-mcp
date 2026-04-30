@@ -7,11 +7,26 @@ A Rust-native MCP (Model Context Protocol) server that bridges an Obsidian vault
 ## Architecture
 
 - **Transport:** MCP over HTTP SSE (not stdio)
-- **HTTP Client:** `reqwest` with `tokio` async runtime
+  - `POST /mcp` — JSON-RPC 2.0 request/response
+  - `GET /sse` — Server-Sent Events stream for server-initiated messages
+- **HTTP Server:** `axum` with `tokio` runtime
+- **HTTP Client:** `reqwest` (Obsidian API calls)
 - **JSON:** `serde` + `serde_json`
 - **Error Handling:** `thiserror` for typed errors, `anyhow` for top-level propagation
-- **Config:** `dotenvy` for `.env` loading (`OBSIDIAN_API_KEY`)
+- **Config:** Direct `.env` file parsing (`OBSIDIAN_API_KEY`, `OBSIDIAN_API_URL`)
 - **SSL:** Self-signed cert handling via `reqwest::ClientBuilder::danger_accept_invalid_certs(true)` or bundled cert
+- **Protocol:** Custom JSON-RPC 2.0 + MCP spec implementation
+
+### Module Layout
+
+| Module | Responsibility |
+|--------|---------------|
+| `src/protocol.rs` | JSON-RPC 2.0 types (Request, Response, Error, RequestId), validation |
+| `src/tools.rs` | Tool registry (register, list, dispatch), ToolDescriptor, ToolHandler type alias |
+| `src/server.rs` | Axum app, SSE + MCP route handlers, AppState, connection limiting |
+| `src/client.rs` | Obsidian Local REST API client (read_note, read_note_metadata, test_connection) |
+| `src/config.rs` | Config struct, .env file parsing, defaults |
+| `src/error.rs` | ObsidianError enum (API, connection, config, write-verification) |
 
 ## Key Design Decisions
 
@@ -65,8 +80,18 @@ confidence: high
 
 ```bash
 cargo build --release
-cargo run -- --test-connection
+cargo run -- --test-connection        # verify Obsidian API connectivity
+cargo run -- --host 127.0.0.1 --port 3000  # start MCP server
 ```
+
+### CLI Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--test-connection` | — | Test Obsidian API connectivity and exit |
+| `--env-file` | `.env` | Path to .env file |
+| `--host` | `127.0.0.1` | MCP server bind address |
+| `--port` | `3000` | MCP server port |
 
 ## Constraints
 
