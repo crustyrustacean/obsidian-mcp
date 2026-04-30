@@ -16,6 +16,14 @@ struct Args {
     /// Path to a .env file (default: .env in current directory)
     #[arg(long)]
     env_file: Option<std::path::PathBuf>,
+
+    /// Host to bind the MCP server to (default: 127.0.0.1)
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+
+    /// Port for the MCP server to listen on (default: 3000)
+    #[arg(long, default_value_t = 3000)]
+    port: u16,
 }
 
 #[tokio::main]
@@ -43,10 +51,10 @@ async fn main() -> anyhow::Result<()> {
         // NOTE: api_key is intentionally NOT logged here
     );
 
-    let client = obsidian_mcp::client::ObsidianClient::new(config);
+    let obsidian_client = obsidian_mcp::client::ObsidianClient::new(config);
 
     if args.test_connection {
-        match client.test_connection().await {
+        match obsidian_client.test_connection().await {
             Ok(()) => {
                 println!("✓ Connected to Obsidian Local REST API successfully");
                 return Ok(());
@@ -58,7 +66,44 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // TODO: Phase 2 — start the MCP SSE server here
-    tracing::info!("obsidian-mcp server not yet implemented (Phase 2)");
+    // Build the tool registry (tools will be registered in Phase 3)
+    let registry = obsidian_mcp::tools::ToolRegistry::new();
+    let app = obsidian_mcp::server::app(registry);
+
+    let addr = format!("{}:{}", args.host, args.port);
+    tracing::info!("starting MCP server on {addr}");
+    tracing::info!("SSE endpoint: http://{addr}/sse");
+    tracing::info!("MCP endpoint: http://{addr}/mcp");
+
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
     Ok(())
+}
+
+/// Graceful shutdown on SIGINT (Ctrl+C) or SIGTERM.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to listen for ctrl+c");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to listen for SIGTERM")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("received Ctrl+C, shutting down"),
+        _ = terminate => tracing::info!("received SIGTERM, shutting down"),
+    }
 }
