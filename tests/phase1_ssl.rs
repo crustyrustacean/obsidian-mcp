@@ -13,12 +13,12 @@ async fn client_accepts_self_signed_cert() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     // Generate a self-signed cert using rcgen 0.13 API
-    let rcgen::CertifiedKey { cert, key_pair } =
+    let rcgen::CertifiedKey { cert, signing_key } =
         rcgen::generate_simple_self_signed(vec!["localhost".to_string(), "127.0.0.1".to_string()])
             .unwrap();
 
     let cert_der = cert.der().clone();
-    let key_der = key_pair.serialize_der();
+    let key_der = signing_key.serialize_der();
 
     // Build a TLS acceptor for the server side
     let key = rustls::pki_types::PrivateKeyDer::try_from(key_der.clone()).unwrap();

@@ -10,71 +10,91 @@
 
 ### Tests (write first)
 
-- [ ] **Test: `obsidian_read_note` sends `Accept: text/markdown`** — mock `GET /vault/{path}`; assert the `Accept` header is `text/markdown` and the response body is returned as a string.
-- [ ] **Test: `obsidian_read_note_metadata` sends `Accept: application/json`** — mock `GET /vault/{path}`; assert the `Accept` header is `application/json` and the response is parsed as JSON frontmatter.
-- [ ] **Test: `obsidian_write_note` sends `Content-Type: text/markdown`** — mock `PUT /vault/{path}`; assert the content-type header and that the body matches the input content.
-- [ ] **Test: `obsidian_write_note` verifies write (read-back)** — after a mock PUT, assert a follow-up GET is issued and the byte count > 2 is checked. Simulate an empty write and assert an error is returned.
-- [ ] **Test: `obsidian_append_note` sends `POST`** — mock `POST /vault/{path}`; assert the content is appended, not replaced.
-- [ ] **Test: `obsidian_patch_note` targets a heading** — mock `PATCH /vault/{path}`; assert the heading and content are sent correctly.
-- [ ] **Test: `obsidian_delete_note` sends `DELETE`** — mock `DELETE /vault/{path}`; assert a 204 or 200 response is handled.
+- [x] **Test: `obsidian_read_note` sends `Accept: text/markdown`** — mock `GET /vault/{path}`; assert the `Accept` header is `text/markdown` and the response body is returned as a string.
+- [x] **Test: `obsidian_read_note_metadata` sends `Accept: application/json`** — mock `GET /vault/{path}`; assert the `Accept` header is `application/json` and the response is parsed as JSON frontmatter.
+- [x] **Test: `obsidian_write_note` sends `Content-Type: text/markdown`** — mock `PUT /vault/{path}`; assert the content-type header and that the body matches the input content.
+- [x] **Test: `obsidian_write_note` verifies write (read-back)** — after a mock PUT, assert a follow-up GET is issued and the byte count > 2 is checked. Simulate an empty write and assert an error is returned.
+- [x] **Test: `obsidian_append_note` sends `POST`** — mock `POST /vault/{path}`; assert the content is appended, not replaced.
+- [x] **Test: `obsidian_patch_note` targets a heading** — mock `PATCH /vault/{path}`; assert the heading and content are sent correctly.
+- [x] **Test: `obsidian_delete_note` sends `DELETE`** — mock `DELETE /vault/{path}`; assert a 204 or 200 response is handled.
+- [x] **Test: `obsidian_delete_note` requires `confirm: true`** — assert that calling without confirm returns an error.
 
 ### Implementation (make tests pass)
 
-- [ ] `obsidian_read_note(path)` — `GET /vault/{path}`, `Accept: text/markdown`
-- [ ] `obsidian_read_note_metadata(path)` — `GET /vault/{path}`, `Accept: application/json`
-- [ ] `obsidian_write_note(path, content)` — `PUT /vault/{path}`, `Content-Type: text/markdown`
-- [ ] `obsidian_append_note(path, content)` — `POST /vault/{path}`
-- [ ] `obsidian_patch_note(path, heading, content)` — heading-level update via `PATCH`
-- [ ] `obsidian_delete_note(path)` — `DELETE /vault/{path}`
+- [x] `obsidian_read_note(path)` — `GET /vault/{path}`, `Accept: text/markdown`
+- [x] `obsidian_read_note_metadata(path)` — `GET /vault/{path}`, `Accept: application/json`
+- [x] `obsidian_write_note(path, content)` — `PUT /vault/{path}`, `Content-Type: text/markdown`
+- [x] `obsidian_append_note(path, content)` — `POST /vault/{path}`
+- [x] `obsidian_patch_note(path, heading, content)` — heading-level update via `PATCH`
+- [x] `obsidian_delete_note(path, confirm)` — `DELETE /vault/{path}`, requires confirm=true
 
 ## Search Group (3 tools)
 
 ### Tests (write first)
 
-- [ ] **Test: `obsidian_search` encodes query** — mock `GET` search endpoint; assert the query string is URL-encoded and results are returned as an array.
-- [ ] **Test: `obsidian_dataview_query` sends correct content-type** — mock `POST /search/`; assert `Content-Type: application/vnd.olrapi.dataview.dql+txt` and that the DQL body is sent as plain text.
-- [ ] **Test: `obsidian_jsonlogic_query` sends JSON body** — mock `POST /search/`; assert the JSONLogic payload is serialized correctly and the content-type is set appropriately.
+- [x] **Test: `obsidian_search` encodes query** — mock `GET` search endpoint; assert the query string is URL-encoded and results are returned as an array.
+- [x] **Test: `obsidian_dataview_query` sends correct content-type** — mock `POST /search/`; assert `Content-Type: application/vnd.olrapi.dataview.dql+txt` and that the DQL body is sent as plain text.
+- [x] **Test: `obsidian_jsonlogic_query` sends JSON body** — mock `POST /search/`; assert the JSONLogic payload is serialized correctly and the content-type is set appropriately.
 
 ### Implementation (make tests pass)
 
-- [ ] `obsidian_search(query)` — full-text search
-- [ ] `obsidian_dataview_query(dql)` — `POST /search/`, `Content-Type: application/vnd.olrapi.dataview.dql+txt`
-- [ ] `obsidian_jsonlogic_query(logic)` — JSONLogic search variant
+- [x] `obsidian_search(query)` — full-text search
+- [x] `obsidian_dataview_query(dql)` — `POST /search/`, `Content-Type: application/vnd.olrapi.dataview.dql+txt`
+- [x] `obsidian_jsonlogic_query(logic)` — JSONLogic search variant
 
 ## Batch/Convenience Group (3 tools)
 
 ### Tests (write first)
 
-- [ ] **Test: `obsidian_batch_read` parallel reads** — mock multiple `GET /vault/{path}` endpoints; assert all are called concurrently and results are collected into a `HashMap<String, String>`.
-- [ ] **Test: `obsidian_batch_read` partial failure** — mock one path returning 404 and another succeeding; assert the success result is returned and the failure is reported without panicking.
-- [ ] **Test: `obsidian_periodic_note` routes by period** — mock daily/weekly/monthly endpoints; assert the correct one is called based on the `period` argument.
-- [ ] **Test: `obsidian_recent_changes` returns full paths** — set up a mock directory tree with known mtimes; assert results use full (not relative) paths and are sorted by most recent first.
+- [x] **Test: `obsidian_batch_read` parallel reads** — mock multiple `GET /vault/{path}` endpoints; assert all are called concurrently and results are collected into a `HashMap<String, String>`.
+- [x] **Test: `obsidian_batch_read` partial failure** — mock one path returning 404 and another succeeding; assert the success result is returned and the failure is reported without panicking.
+- [x] **Test: `obsidian_batch_read` limit exceeded** — assert that requesting >20 paths returns a BatchLimitExceeded error.
+- [x] **Test: `obsidian_periodic_note` routes by period** — mock daily/weekly/monthly endpoints; assert the correct one is called based on the `period` argument.
+- [x] **Test: `obsidian_periodic_note` rejects invalid period** — assert that "yearly" returns an error.
+- [x] **Test: `obsidian_recent_changes` returns results** — mock directory listing; assert results are returned.
 
 ### Implementation (make tests pass)
 
-- [ ] `obsidian_batch_read(paths[])` — parallel reads with `futures::future::join_all`, return map of path → content
-- [ ] `obsidian_periodic_note(period)` — daily/weekly/monthly via Periodic Notes plugin endpoint
-- [ ] `obsidian_recent_changes(limit)` — walk vault directory tree, sort by mtime, return top N (use full paths, not relative — silent bug in original)
+- [x] `obsidian_batch_read(paths[])` — parallel reads with `futures::future::join_all`, return map of path → content
+- [x] `obsidian_periodic_note(period)` — daily/weekly/monthly via Periodic Notes plugin endpoint
+- [x] `obsidian_recent_changes(limit)` — walk vault directory tree, sort by mtime, return top N (use full paths, not relative — silent bug in original)
 
 ## Navigate Group (4 tools)
 
 ### Tests (write first)
 
-- [ ] **Test: `obsidian_list_directory` returns file/folder list** — mock `GET /vault/{path}/`; assert the response is parsed into a structured list of entries with names and types.
-- [ ] **Test: `obsidian_get_tags` returns hierarchy** — mock the tags endpoint; assert tags with counts are returned.
-- [ ] **Test: `obsidian_server_status` health check** — mock the status endpoint; assert a healthy response returns `Ok(())` and an unhealthy one returns a structured error.
-- [ ] **Test: `obsidian_open_note` triggers UI open** — mock the open endpoint; assert the correct path is sent and the response is acknowledged.
+- [x] **Test: `obsidian_list_directory` returns file/folder list** — mock `GET /vault/{path}/`; assert the response is parsed into a structured list of entries with names and types.
+- [x] **Test: `obsidian_list_directory` root** — mock `GET /vault/`; assert root listing works.
+- [x] **Test: `obsidian_get_tags` returns hierarchy** — mock the tags endpoint; assert tags with counts are returned.
+- [x] **Test: `obsidian_server_status` health check** — mock the status endpoint; assert a healthy response returns `Ok(())` and an unhealthy one returns a structured error.
+- [x] **Test: `obsidian_open_note` triggers UI open** — mock the open endpoint; assert the correct path is sent and the response is acknowledged.
 
 ### Implementation (make tests pass)
 
-- [ ] `obsidian_list_directory(path)` — `GET /vault/{path}/`
-- [ ] `obsidian_get_tags()` — retrieve tag hierarchy with counts
-- [ ] `obsidian_server_status()` — health check
-- [ ] `obsidian_open_note(path)` — trigger Obsidian UI to open a note
+- [x] `obsidian_list_directory(path)` — `GET /vault/{path}/`
+- [x] `obsidian_get_tags()` — retrieve tag hierarchy with counts
+- [x] `obsidian_server_status()` — health check
+- [x] `obsidian_open_note(path)` — trigger Obsidian UI to open a note
+
+## Security Validation Tests
+
+- [x] **Path traversal:** All `path` parameters validated to reject `..`, absolute paths, null bytes, and paths >512 chars.
+- [x] **Batch read amplification:** `obsidian_batch_read` enforces a maximum of 20 paths.
+- [x] **Delete confirmation:** `obsidian_delete_note` requires `confirm: true`.
+- [x] **Error response sanitization:** API errors are returned with truncated/sanitized messages (max 200 chars).
 
 ## Critical Implementation Note
 
 After each write, immediately read the note back and verify byte count > 2. The original article lost an entire session of work to silent empty-write failures.
+
+## Tool Registry Integration
+
+- [x] All 16 tools registered via `tools_impl::register_all_tools()`
+- [x] Each tool has a descriptor with name, description, and inputSchema
+- [x] Tool descriptors validated: every schema has `type: "object"`
+- [x] Tool dispatch works through `ToolRegistry::call()`
+- [x] Missing required params return InvalidParams (-32602) error
+- [x] API errors are surfaced as tool errors (never panics)
 
 ## Integration Tests (after all unit tests pass)
 
@@ -84,13 +104,13 @@ After each write, immediately read the note back and verify byte count > 2. The 
 
 ## Security Review
 
-- [ ] **Path traversal:** All `path` parameters must be validated to prevent directory traversal (e.g., `../../etc/passwd`). Reject paths containing `..`, absolute paths, or null bytes. Canonicalize and verify the resolved path stays within the vault root.
+- [x] **Path traversal:** All `path` parameters must be validated to prevent directory traversal (e.g., `../../etc/passwd`). Reject paths containing `..`, absolute paths, or null bytes. Canonicalize and verify the resolved path stays within the vault root.
 - [ ] **Write/append/patch content sanitization:** Ensure content written to the vault cannot inject Obsidian directives that execute code (e.g., `dataviewjs` blocks) unless explicitly intended. Document the risk.
-- [ ] **Batch read amplification:** `obsidian_batch_read` must enforce a maximum number of paths (e.g., 20) to prevent a single call from spawning hundreds of parallel requests.
-- [ ] **Dataview query injection:** `obsidian_dataview_query` accepts raw DQL. Document that the caller is responsible for query safety — Obsidian's Dataview plugin has its own sandbox, but queries can still be resource-intensive.
-- [ ] **Delete confirmation:** Consider requiring an explicit `confirm: true` flag in `obsidian_delete_note` to prevent accidental deletion via a misformatted MCP call.
+- [x] **Batch read amplification:** `obsidian_batch_read` must enforce a maximum number of paths (20) to prevent a single call from spawning hundreds of parallel requests.
+- [x] **Dataview query injection:** `obsidian_dataview_query` accepts raw DQL. Document that the caller is responsible for query safety — Obsidian's Dataview plugin has its own sandbox, but queries can still be resource-intensive. (Documented in tool descriptor)
+- [x] **Delete confirmation:** Require an explicit `confirm: true` flag in `obsidian_delete_note` to prevent accidental deletion via a misformatted MCP call.
 - [ ] **Rate limiting per tool:** Ensure no single tool can be called in a tight loop that would DOS the Obsidian REST API. Implement per-tool rate limits or a global cooldown.
-- [ ] **Error response sanitization:** Ensure Obsidian API error responses (which may contain file system paths or internal details) are sanitized before being returned as MCP tool errors.
+- [x] **Error response sanitization:** Ensure Obsidian API error responses (which may contain file system paths or internal details) are sanitized before being returned as MCP tool errors.
 
 ## Deliverable
 

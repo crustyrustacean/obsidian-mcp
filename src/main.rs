@@ -1,6 +1,7 @@
 // Binary entry point — crate modules are declared in lib.rs
 
 use clap::Parser;
+use std::sync::Arc;
 
 /// Obsidian Second Brain MCP Server
 ///
@@ -51,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
         // NOTE: api_key is intentionally NOT logged here
     );
 
-    let obsidian_client = obsidian_mcp::client::ObsidianClient::new(config);
+    let obsidian_client = Arc::new(obsidian_mcp::client::ObsidianClient::new(config));
 
     if args.test_connection {
         match obsidian_client.test_connection().await {
@@ -66,8 +67,13 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Build the tool registry (tools will be registered in Phase 3)
-    let registry = obsidian_mcp::tools::ToolRegistry::new();
+    // Build the tool registry with all 16 tools
+    let mut registry = obsidian_mcp::tools::ToolRegistry::new();
+    obsidian_mcp::tools_impl::register_all_tools(&mut registry, obsidian_client);
+
+    let tool_count = registry.list().len();
+    tracing::info!(tools = tool_count, "registered MCP tools");
+
     let app = obsidian_mcp::server::app(registry);
 
     let addr = format!("{}:{}", args.host, args.port);
