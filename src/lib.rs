@@ -1,8 +1,10 @@
 pub mod client;
 pub mod config;
 pub mod error;
+pub mod frontmatter;
 pub mod protocol;
 pub mod rate_limiter;
 pub mod server;
 pub mod tools;
 pub mod tools_impl;
+pub mod vault;

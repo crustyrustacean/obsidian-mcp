@@ -24,9 +24,13 @@ A Rust-native MCP (Model Context Protocol) server that bridges an Obsidian vault
 | `src/protocol.rs` | JSON-RPC 2.0 types (Request, Response, Error, RequestId), validation |
 | `src/tools.rs` | Tool registry (register, list, dispatch), ToolDescriptor, ToolHandler type alias |
 | `src/server.rs` | Axum app, SSE + MCP route handlers, AppState, connection limiting |
-| `src/client.rs` | Obsidian Local REST API client (read_note, read_note_metadata, test_connection) |
+| `src/client.rs` | Obsidian Local REST API client (all 16 tool methods) |
 | `src/config.rs` | Config struct, .env file parsing, defaults |
-| `src/error.rs` | ObsidianError enum (API, connection, config, write-verification) |
+| `src/error.rs` | ObsidianError enum, path/query validation |
+| `src/rate_limiter.rs` | Per-tool GCRA rate limiting via flux-limiter |
+| `src/tools_impl.rs` | 16 tool descriptors + handler registration |
+| `src/frontmatter.rs` | YAML frontmatter schema, parsing, validation |
+| `src/vault.rs` | Vault init, directory layout, session protocols, routing table |
 
 ## Key Design Decisions
 
@@ -46,7 +50,6 @@ vault/
   _index.md                 # Dataview live queries by type/status/recency
   content/
     ideas-bank.md
-    audience-insights.md
     growth-experiments.md
   research/
   sessions/                 # one note per session, auto-written at session end
