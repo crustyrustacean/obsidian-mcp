@@ -68,6 +68,18 @@ The server exposes two endpoints:
 
 ## Client Configuration
 
+### pi
+
+A pi extension is included at `.pi/extensions/obsidian/`. Copy it to your pi extensions directory:
+
+```bash
+cp -r .pi/extensions/obsidian ~/.pi/agent/extensions/
+```
+
+Set `OBSIDIAN_API_KEY` in your environment and start pi. The extension auto-loads all 16 tools.
+
+See the [pi client docs](docs/src/clients-pi.md) for details.
+
 ### Claude Desktop
 
 Add to your `claude_desktop_config.json`:
@@ -125,6 +137,7 @@ Connect to `http://127.0.0.1:3000/sse` for the event stream and send JSON-RPC re
 | `--env-file` | `.env` | Path to .env file |
 | `--transport` | `stdio` | Transport mode: `stdio` or `sse` |
 | `--host` | `127.0.0.1` | MCP server bind address (SSE only) |
+| `--port` | `3000` | MCP server port (SSE only) |
 
 ## Tools (16)
 
@@ -194,6 +207,14 @@ The Obsidian full-text search index has a lag. Programmatic writes may not appea
 
 Wait the indicated retry duration. The per-tool limit is 2 req/s with burst of 5.
 
+## Documentation
+
+Full documentation is available in the `docs/` directory:
+
+```bash
+cd docs && mdbook serve    # Live preview at http://localhost:3000
+```
+
 ## License
 
-MIT
+[MIT](License.txt)
