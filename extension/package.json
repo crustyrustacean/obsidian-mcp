@@ -1,6 +1,6 @@
 {
   "name": "obsidian-mcp",
-  "version": "0.5.0",
+  "version": "1.1.0",
   "description": "Obsidian vault integration for pi via MCP stdio transport",
   "keywords": ["pi-package"],
   "dependencies": {},
