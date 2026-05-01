@@ -125,7 +125,10 @@ export default function (pi: ExtensionAPI) {
         }
     });
 
-    // Register all 16 tools using defineTool
+    // Register all 16 tools using defineTool.
+    // NOTE: callTool names MUST match the MCP server's tool names exactly
+    // (i.e., with the "obsidian_" prefix) — the server registers tools as
+    // "obsidian_read_note", not "read_note".
     const tools = [
         defineTool({
             name: "obsidian_read_note",
@@ -133,7 +136,7 @@ export default function (pi: ExtensionAPI) {
             description: "Read a note from the Obsidian vault as markdown",
             parameters: Type.Object({ path: Type.String({ description: "Path to the note (e.g., 'notes/my-note.md')" }) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("read_note", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_read_note", params) }], details: {} };
             },
         }),
         defineTool({
@@ -142,7 +145,7 @@ export default function (pi: ExtensionAPI) {
             description: "Read a note's metadata (frontmatter) as JSON",
             parameters: Type.Object({ path: Type.String({ description: "Path to the note" }) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("read_note_metadata", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_read_note_metadata", params) }], details: {} };
             },
         }),
         defineTool({
@@ -154,7 +157,7 @@ export default function (pi: ExtensionAPI) {
                 content: Type.String({ description: "Markdown content to write" }),
             }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("write_note", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_write_note", params) }], details: {} };
             },
         }),
         defineTool({
@@ -166,7 +169,7 @@ export default function (pi: ExtensionAPI) {
                 content: Type.String({ description: "Markdown content to append" }),
             }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("append_note", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_append_note", params) }], details: {} };
             },
         }),
         defineTool({
@@ -179,7 +182,7 @@ export default function (pi: ExtensionAPI) {
                 content: Type.String({ description: "Content to place under the heading" }),
             }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("patch_note", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_patch_note", params) }], details: {} };
             },
         }),
         defineTool({
@@ -191,7 +194,7 @@ export default function (pi: ExtensionAPI) {
                 confirm: Type.Boolean({ description: "Must be true to confirm deletion" }),
             }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("delete_note", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_delete_note", params) }], details: {} };
             },
         }),
         defineTool({
@@ -200,7 +203,7 @@ export default function (pi: ExtensionAPI) {
             description: "Full-text search across the Obsidian vault",
             parameters: Type.Object({ query: Type.String({ description: "Search query (max 1000 chars)" }) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("search", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_search", params) }], details: {} };
             },
         }),
         defineTool({
@@ -209,7 +212,7 @@ export default function (pi: ExtensionAPI) {
             description: "Execute a Dataview DQL query against the Obsidian vault",
             parameters: Type.Object({ dql: Type.String({ description: "Dataview DQL query string (max 1000 chars)" }) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("dataview_query", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_dataview_query", params) }], details: {} };
             },
         }),
         defineTool({
@@ -218,7 +221,7 @@ export default function (pi: ExtensionAPI) {
             description: "Execute a JSONLogic search query against the Obsidian vault",
             parameters: Type.Object({ logic: Type.Object({}, { description: "JSONLogic query object" }) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("jsonlogic_query", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_jsonlogic_query", params) }], details: {} };
             },
         }),
         defineTool({
@@ -227,7 +230,7 @@ export default function (pi: ExtensionAPI) {
             description: "Read multiple notes in parallel. Max 20 paths. Partial failures reported per-path.",
             parameters: Type.Object({ paths: Type.Array(Type.String(), { description: "Array of note paths (max 20)" }) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("batch_read", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_batch_read", params) }], details: {} };
             },
         }),
         defineTool({
@@ -236,7 +239,7 @@ export default function (pi: ExtensionAPI) {
             description: "Get a periodic note (daily, weekly, or monthly)",
             parameters: Type.Object({ period: StringEnum(["daily", "weekly", "monthly"] as const, { description: "Period type" }) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("periodic_note", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_periodic_note", params) }], details: {} };
             },
         }),
         defineTool({
@@ -245,7 +248,7 @@ export default function (pi: ExtensionAPI) {
             description: "Get recently changed notes sorted by modification time",
             parameters: Type.Object({ limit: Type.Optional(Type.Number({ description: "Max results (1-100, default 10)" })) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("recent_changes", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_recent_changes", params) }], details: {} };
             },
         }),
         defineTool({
@@ -254,7 +257,7 @@ export default function (pi: ExtensionAPI) {
             description: "List the contents of a directory in the Obsidian vault",
             parameters: Type.Object({ path: Type.Optional(Type.String({ description: "Directory path (empty for root)" })) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("list_directory", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_list_directory", params) }], details: {} };
             },
         }),
         defineTool({
@@ -263,7 +266,7 @@ export default function (pi: ExtensionAPI) {
             description: "Get the tag hierarchy with counts from the Obsidian vault",
             parameters: Type.Object({}),
             async execute(_id, _params) {
-                return { content: [{ type: "text", text: await callTool("get_tags", {}) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_get_tags", {}) }], details: {} };
             },
         }),
         defineTool({
@@ -272,7 +275,7 @@ export default function (pi: ExtensionAPI) {
             description: "Health check — test connectivity to the Obsidian Local REST API",
             parameters: Type.Object({}),
             async execute(_id, _params) {
-                return { content: [{ type: "text", text: await callTool("server_status", {}) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_server_status", {}) }], details: {} };
             },
         }),
         defineTool({
@@ -281,7 +284,7 @@ export default function (pi: ExtensionAPI) {
             description: "Trigger the Obsidian UI to open a specific note",
             parameters: Type.Object({ path: Type.String({ description: "Path to the note to open" }) }),
             async execute(_id, params) {
-                return { content: [{ type: "text", text: await callTool("open_note", params) }], details: {} };
+                return { content: [{ type: "text", text: await callTool("obsidian_open_note", params) }], details: {} };
             },
         }),
     ];

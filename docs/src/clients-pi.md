@@ -1,6 +1,6 @@
 # pi
 
-[pi](https://pi.dev) doesn't speak MCP natively — it uses TypeScript extensions with `pi.registerTool()`. The project includes a ready-made extension at `.pi/extensions/obsidian/`.
+[pi](https://pi.dev) doesn't speak MCP natively — it uses TypeScript extensions with `pi.registerTool()`. The project includes a ready-made extension at `extension/`.
 
 ## Setup
 
@@ -14,7 +14,7 @@
 2. Copy the extension to your pi extensions directory:
 
    ```bash
-   cp -r .pi/extensions/obsidian ~/.pi/agent/extensions/
+   cp -r extension ~/.pi/agent/extensions/obsidian
    ```
 
 3. Set your API key in your environment (e.g., in `~/.profile` or `~/.zshrc`):

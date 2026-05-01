@@ -33,7 +33,7 @@ A Rust-native MCP (Model Context Protocol) server that bridges an Obsidian vault
 | `src/frontmatter.rs` | YAML frontmatter schema, parsing, validation |
 | `src/vault.rs` | Vault init, directory layout, session protocols, routing table |
 | `src/audit.rs` | Session-end audit: session log presence, manifest freshness |
-| `.pi/extensions/obsidian/` | TypeScript pi extension — spawns binary in stdio mode, registers 16 tools |
+| `extension/` | TypeScript pi extension — spawns binary in stdio mode, registers 16 tools |
 
 ## Key Design Decisions
 
